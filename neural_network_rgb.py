@@ -144,16 +144,55 @@ def generate_synthetic_samples(minority_samples, n_synthetic):
     
     return synthetic_samples
 
-# Modified load and preprocess function with balance checking and data augmentation
+
+                
+
+
 def load_data(data_dir=None, use_pickle=True, pickle_path="./rgb_data.pkl", img_size=(28, 28), 
               check_balance=True, augment_data=False, logger=None):
     """
-    Load data either from a pickle file or from image directories, supporting RGB images
-    Options to check class balance and augment data
+    Load data either from a pickle file or from image directories, supporting RGB images.
+    
+    Parameters:
+    -----------
+    data_dir : str, optional
+        Path to directory containing class subdirectories with images
+    use_pickle : bool, default=True
+        Whether to load data from pickle file
+    pickle_path : str, default="./rgb_data.pkl"
+        Path to pickle file containing data
+    img_size : tuple, default=(28, 28)
+        Size to resize images to
+    check_balance : bool, default=True
+        Whether to check class balance
+    augment_data : bool, default=False
+        Whether to augment data for imbalanced classes
+    logger : logging.Logger, optional
+        Logger object for logging information
+        
+    Returns:
+    --------
+    X_train : numpy.ndarray
+        Training features
+    X_test : numpy.ndarray
+        Test features
+    y_train_encoded : numpy.ndarray
+        One-hot encoded training labels
+    y_test_encoded : numpy.ndarray
+        One-hot encoded test labels
+    num_classes : int
+        Number of classes
+    class_weight_dict : dict or None
+        Dictionary with class weights for imbalanced data
     """
     if logger is None:
         logger = logging.getLogger('neural_network')
     
+    # Initialize variables we'll need later
+    num_classes = None
+    class_weight_dict = None
+    
+    # Load data from pickle or process image directories
     if use_pickle:
         if not os.path.exists(pickle_path):
             raise FileNotFoundError(f"Pickle file not found: {pickle_path}")
@@ -185,9 +224,7 @@ def load_data(data_dir=None, use_pickle=True, pickle_path="./rgb_data.pkl", img_
         if not class_dirs:
             raise ValueError(f"No valid class directories found in {data_dir}")
         
-        # Track class distribution for balancing
-        class_counts = {}
-            
+        # Process each class directory
         for class_dir in class_dirs:
             class_path = os.path.join(data_dir, class_dir)
             
@@ -206,22 +243,19 @@ def load_data(data_dir=None, use_pickle=True, pickle_path="./rgb_data.pkl", img_
             if not img_files:
                 logger.warning(f"No image files found in {class_path}")
                 continue
-            
-            # Update class count
-            class_counts[class_label] = len(img_files)
                 
             # Process images with a progress indicator
-            for i, img_file in enumerate(tqdm(img_files, desc=f"Class {class_label}")):
+            for img_file in tqdm(img_files, desc=f"Class {class_label}"):
                 img_path = os.path.join(class_path, img_file)
                 
                 try:
-                    # Using PIL for loading and processing - now keeping RGB
-                    img = Image.open(img_path).convert('RGB')  # Convert to RGB
-                    img = img.resize(img_size)  # Resize to specified size
-                    img_array = np.array(img) / 255.0  # Convert to numpy array and normalize
+                    # Using PIL for loading and processing - keeping RGB
+                    img = Image.open(img_path).convert('RGB')
+                    img = img.resize(img_size)
+                    img_array = np.array(img) / 255.0  # Normalize to [0,1]
                     
-                    # Reshape to flatten the image while preserving RGB channels
-                    X.append(img_array.reshape(-1))  # Flatten the image
+                    # Flatten the image while preserving RGB
+                    X.append(img_array.reshape(-1))
                     y.append(class_label)
                     
                 except Exception as e:
@@ -243,7 +277,11 @@ def load_data(data_dir=None, use_pickle=True, pickle_path="./rgb_data.pkl", img_
         X_train, X_test = X[train_indices], X[test_indices]
         y_train, y_test = y[train_indices], y[test_indices]
     
-    # Check class balance
+    # Determine number of classes from the data
+    all_labels = np.concatenate([y_train, y_test])
+    num_classes = len(np.unique(all_labels))
+    
+    # Check class balance if requested
     if check_balance:
         # Count occurrences of each class in training data
         unique_classes, class_counts = np.unique(y_train, return_counts=True)
@@ -328,14 +366,11 @@ def load_data(data_dir=None, use_pickle=True, pickle_path="./rgb_data.pkl", img_
             logger.info("New class distribution after balancing:")
             for cls, count in zip(unique_classes, new_counts):
                 logger.info(f"Class {cls}: {count} samples ({count/len(y_train)*100:.2f}%)")
-    else:
-        class_weight_dict = None
     
     # One-hot encode the labels
-    y_train_encoded = one_hot_encode(y_train)
-    y_test_encoded = one_hot_encode(y_test)
+    y_train_encoded = one_hot_encode(y_train, num_classes)
+    y_test_encoded = one_hot_encode(y_test, num_classes)
     
-    num_classes = y_train_encoded.shape[1]
     logger.info(f"Data loaded: {X_train.shape[0]} training samples, {X_test.shape[0]} test samples")
     logger.info(f"Input dimension: {X_train.shape[1]} (RGB flattened)")
     logger.info(f"Number of classes: {num_classes}")
