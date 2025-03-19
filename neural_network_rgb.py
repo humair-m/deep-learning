@@ -724,9 +724,34 @@ def load_model(model_path, logger=None):
     logger.info(f"Model loaded from {model_path}")
     return weights
 
-# Evaluate model function
 def evaluate(X, y, weights, logger=None):
-    """Evaluate the model on the given data"""
+    """
+    Evaluate the model on the given data
+    
+    Parameters:
+    -----------
+    X : numpy.ndarray
+        Input features to evaluate
+    y : numpy.ndarray
+        One-hot encoded ground truth labels
+    weights : dict
+        Dictionary containing model weights and biases
+    logger : logging.Logger, optional
+        Logger object for logging information
+        
+    Returns:
+    --------
+    loss : float
+        Loss value on the evaluation data
+    accuracy : float
+        Overall accuracy as a percentage
+    class_metrics : dict
+        Dictionary containing per-class metrics
+    confusion_matrix : numpy.ndarray
+        Confusion matrix of predictions
+    predictions : numpy.ndarray
+        Model predictions as class indices
+    """
     if logger is None:
         logger = logging.getLogger('neural_network')
         
@@ -749,18 +774,26 @@ def evaluate(X, y, weights, logger=None):
         # Find samples of this class
         cls_indices = ground_truth == cls
         
-        # Calculate metrics for this class
-        cls_correct = np.sum((predictions == cls) & cls_indices)
-        cls_total = np.sum(cls_indices)
-        cls_precision = cls_correct / np.sum(predictions == cls) if np.sum(predictions == cls) > 0 else 0
-        cls_recall = cls_correct / cls_total if cls_total > 0 else 0
-        cls_f1 = 2 * cls_precision * cls_recall / (cls_precision + cls_recall) if (cls_precision + cls_recall) > 0 else 0
+        # True positives (correctly predicted this class)
+        true_positives = np.sum((predictions == cls) & cls_indices)
+        
+        # Total predictions of this class (including incorrect ones)
+        total_predicted = np.sum(predictions == cls)
+        
+        # Total actual samples of this class
+        total_actual = np.sum(cls_indices)
+        
+        # Calculate metrics
+        precision = true_positives / total_predicted if total_predicted > 0 else 0
+        recall = true_positives / total_actual if total_actual > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
         
         class_metrics[cls] = {
-            'accuracy': cls_correct / cls_total * 100 if cls_total > 0 else 0,
-            'precision': cls_precision * 100,
-            'recall': cls_recall * 100,
-            'f1': cls_f1 * 100
+            'accuracy': true_positives / total_actual * 100 if total_actual > 0 else 0,
+            'precision': precision * 100,
+            'recall': recall * 100,
+            'f1': f1 * 100,
+            'support': int(total_actual)  # Added support count
         }
     
     # Log metrics
@@ -770,16 +803,27 @@ def evaluate(X, y, weights, logger=None):
         logger.info(f"Class {cls}: Acc={metrics['accuracy']:.2f}%, "
                    f"Prec={metrics['precision']:.2f}%, "
                    f"Rec={metrics['recall']:.2f}%, "
-                   f"F1={metrics['f1']:.2f}%")
+                   f"F1={metrics['f1']:.2f}%, "
+                   f"Support={metrics['support']}")
     
     # Calculate confusion matrix
     n_classes = len(unique_classes)
     confusion_matrix = np.zeros((n_classes, n_classes), dtype=int)
     
+    # Ensure class indices match the row/column indices
+    class_to_index = {cls: i for i, cls in enumerate(sorted(unique_classes))}
+    
     for i in range(len(ground_truth)):
         true_class = ground_truth[i]
         pred_class = predictions[i]
-        confusion_matrix[true_class, pred_class] += 1
+        true_idx = class_to_index[true_class]
+        pred_idx = class_to_index[pred_class]
+        confusion_matrix[true_idx, pred_idx] += 1
+    
+    # Log confusion matrix summary
+    logger.info("Confusion matrix diagonal (true positives per class):")
+    for i, cls in enumerate(sorted(unique_classes)):
+        logger.info(f"Class {cls}: {confusion_matrix[i, i]} / {np.sum(confusion_matrix[i, :])} correct")
     
     return loss, accuracy, class_metrics, confusion_matrix, predictions
 
