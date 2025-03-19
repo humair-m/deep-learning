@@ -1,3 +1,10 @@
+#ALL RIGHTS RESERVERD
+#HUMAIR MUNIR
+#humairmunirawan@gmail.com
+
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
