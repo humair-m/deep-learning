@@ -1,6 +1,9 @@
 """
 network.py
 ~~~~~~~~~~
+#ALL RIGHTS RESERVERD
+#HUMAIR MUNIR
+#humairmunirawan@gmail.com
 
 A module to implement the stochastic gradient descent learning
 algorithm for a feedforward neural network. Gradients are calculated
