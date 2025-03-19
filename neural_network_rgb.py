@@ -464,68 +464,110 @@ def forward(X, weights, is_training=False, dropout_rate=0.2):
     cache = (hidden_layer1, hidden_layer2, dropout_mask1, dropout_mask2)
     
     return output_layer, cache
-
-# Backward Propagation with class weights
 def backward(X, y, cache, output, weights, learning_rate, gradient_clip_value, dropout_rate=0.2, class_weights=None):
-    """Backward pass with class weighting and gradient clipping"""
+    """
+    Backward pass with class weighting and gradient clipping.
+    
+    Parameters:
+    -----------
+    X : numpy.ndarray
+        Input features
+    y : numpy.ndarray
+        One-hot encoded target labels
+    cache : tuple
+        Cached values from forward pass (hidden_layer1, hidden_layer2, dropout_mask1, dropout_mask2)
+    output : numpy.ndarray
+        Output from forward pass
+    weights : tuple
+        Current model weights (weights_input_hidden1, bias_hidden1, weights_hidden1_hidden2, 
+                              bias_hidden2, weights_hidden2_output, bias_output)
+    learning_rate : float
+        Learning rate for weight updates
+    gradient_clip_value : float
+        Maximum allowed gradient norm
+    dropout_rate : float, default=0.2
+        Dropout rate used during training
+    class_weights : dict, optional
+        Dictionary mapping class indices to weights
+        
+    Returns:
+    --------
+    updated_weights : tuple
+        Updated model weights
+    """
+    # Unpack weights and cache
     weights_input_hidden1, bias_hidden1, weights_hidden1_hidden2, bias_hidden2, weights_hidden2_output, bias_output = weights
     hidden_layer1, hidden_layer2, dropout_mask1, dropout_mask2 = cache
-
-    # Output layer error with optional class weighting
-    output_error = output - y  # Cross-entropy derivative with softmax
+    
+    # Calculate output layer error (derivative of cross-entropy with softmax)
+    output_error = output - y
     
     # Apply class weights if provided
     if class_weights is not None:
-        # Need to convert one-hot encoded y back to class indices
+        # Convert one-hot encoded y back to class indices
         class_indices = np.argmax(y, axis=1)
+        
         # Get weights for each sample
-        sample_weights = np.array([class_weights[idx] for idx in class_indices])
+        sample_weights = np.array([class_weights.get(idx, 1.0) for idx in class_indices])
+        
         # Apply weights to error (reshape for broadcasting)
         output_error = output_error * sample_weights.reshape(-1, 1)
     
-    # Gradients for output layer
+    # ---- Output layer gradients ----
     d_weights_hidden2_output = np.dot(hidden_layer2.T, output_error)
     d_bias_output = np.sum(output_error, axis=0, keepdims=True)
-
-    # Hidden layer 2 error
+    
+    # ---- Hidden layer 2 backpropagation ----
+    # Calculate error at hidden layer 2
     hidden2_error = np.dot(output_error, weights_hidden2_output.T) * relu_derivative(hidden_layer2)
+    
+    # Apply dropout scaling if training (mask is not None)
     if dropout_mask2 is not None:
-        hidden2_error *= dropout_mask2 / (1 - dropout_rate)  # Apply dropout mask
-
-    # Gradients for hidden layer 2
+        hidden2_error *= dropout_mask2 / (1 - dropout_rate)
+    
+    # Calculate gradients for hidden layer 2
     d_weights_hidden1_hidden2 = np.dot(hidden_layer1.T, hidden2_error)
     d_bias_hidden2 = np.sum(hidden2_error, axis=0, keepdims=True)
-
-    # Hidden layer 1 error
+    
+    # ---- Hidden layer 1 backpropagation ----
+    # Calculate error at hidden layer 1
     hidden1_error = np.dot(hidden2_error, weights_hidden1_hidden2.T) * relu_derivative(hidden_layer1)
+    
+    # Apply dropout scaling if training (mask is not None)
     if dropout_mask1 is not None:
-        hidden1_error *= dropout_mask1 / (1 - dropout_rate)  # Apply dropout mask
-
-    # Gradients for hidden layer 1
+        hidden1_error *= dropout_mask1 / (1 - dropout_rate)
+    
+    # Calculate gradients for hidden layer 1
     d_weights_input_hidden1 = np.dot(X.T, hidden1_error)
     d_bias_hidden1 = np.sum(hidden1_error, axis=0, keepdims=True)
-
-    # Apply gradient clipping to all gradients
-    gradients = [d_weights_input_hidden1, d_bias_hidden1, 
-                d_weights_hidden1_hidden2, d_bias_hidden2, 
-                d_weights_hidden2_output, d_bias_output]
     
+    # Collect all gradients
+    gradients = [
+        d_weights_input_hidden1, 
+        d_bias_hidden1, 
+        d_weights_hidden1_hidden2, 
+        d_bias_hidden2, 
+        d_weights_hidden2_output, 
+        d_bias_output
+    ]
+    
+    # Apply gradient clipping to prevent exploding gradients
     for i in range(len(gradients)):
         norm = np.sqrt(np.sum(gradients[i]**2))
         if norm > gradient_clip_value:
             gradients[i] = gradients[i] * (gradient_clip_value / norm)
     
     # Update weights with clipped gradients
-    weights_input_hidden1 -= learning_rate * gradients[0]
-    bias_hidden1 -= learning_rate * gradients[1]
-    weights_hidden1_hidden2 -= learning_rate * gradients[2]
-    bias_hidden2 -= learning_rate * gradients[3]
-    weights_hidden2_output -= learning_rate * gradients[4]
-    bias_output -= learning_rate * gradients[5]
-
-    return (weights_input_hidden1, bias_hidden1, 
-            weights_hidden1_hidden2, bias_hidden2, 
-            weights_hidden2_output, bias_output)
+    updated_weights = (
+        weights_input_hidden1 - learning_rate * gradients[0],
+        bias_hidden1 - learning_rate * gradients[1],
+        weights_hidden1_hidden2 - learning_rate * gradients[2],
+        bias_hidden2 - learning_rate * gradients[3],
+        weights_hidden2_output - learning_rate * gradients[4],
+        bias_output - learning_rate * gradients[5]
+    )
+    
+    return updated_weights
 
 # Compute Loss with class weights
 def compute_loss(y_true, y_pred, epsilon=1e-15, class_weights=None):
